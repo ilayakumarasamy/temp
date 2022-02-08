@@ -1,0 +1,97 @@
+void call() {
+        stage(config.stagename) {
+        node(config.agent) {
+            println 'crm-import-solution'
+
+            String response, url
+            String agent = config.agent
+            String appname = config.appname
+            String jobname = config.jobname
+            String branchname = config.branchname
+            String buildnumber = config.buildnumber
+            String githubapiurl = config.githubapiurl
+            String githubtokencredentialid = config.githubtokencredentialid
+            String jenkinsurl = config.jenkinsurl
+            String appsolutionname = config.appsolutionname ?: ''
+            String fprfilename = config.fprfilename ?: ''
+            String destinationname = config.destinationname
+            String crmsolutionname = config.crmsolutionname
+
+            def jobnameparts = jobname.tokenize('/') as String[]
+            def jobconsolename = jobnameparts[0]
+            String jenkinsbuildurl =  jenkinsurl + 'blue/organizations/jenkins/' + jobconsolename + '/detail/' + branchname + '/' + buildnumber + '/pipeline'
+
+            String agentname = agent.toLowerCase()
+
+            try {
+
+def stdout = powershell(returnStdout: true, script: '''        
+# force strict - so any variable used before being assigned causes an error
+Set-PsDebug -Strict
+# force PowerShell to exit with a non-zero code on the first error
+$ErrorActionPreference = 'Stop'
+
+# set $LASTEXITCODE to zero, so the script doesn't fail if no exit code returned
+$LASTEXITCODE = 0
+
+$solutionName ="$($env:SolutionName)"
+
+$source = "$($env:Destination)"
+
+$CRMDestinationUrl=""
+
+if($source -eq 'pats-r-dev'){
+    Write-Host "Dev"
+    $CRMDestinationUrl="https://dvagov-veft-dev.crm9.dynamics.com"
+} elseif($source -eq 'pats-r-int'){
+    Write-Host "Int"
+    $CRMDestinationUrl="https://dvagov-veft-dev.crm9.dynamics.com"
+}
+elseif($source -eq 'qa'){
+    Write-Host "QA"
+    $CRMDestinationUrl="https://dvagov-veft-dev.crm9.dynamics.com"
+}
+elseif($source -eq 'pre-production'){
+    Write-Host "Pre-Prod"
+    $CRMDestinationUrl="https://dvagov-veft-dev.crm9.dynamics.com"
+}
+elseif($source -eq 'master'){
+    Write-Host "Master"
+    $CRMDestinationUrl="https://dvagov-veft-dev.crm9.dynamics.com"
+}
+
+$solutionName ="$($env:SolutionFileName)"
+$SolutionFilePath="F:\\jenkins\\workspace\\PATS-R-Import-Solution\\Solutions\\latest"
+
+$CRMDestinationUserName="3c66af14-6950-429d-b042-68e61fa90bd2"
+$CRMDestinationPassword="Hm6kyDaB.3YR.7ZC7nxXdlEH1_x7W_r-HS"
+
+Set-StrictMode -Version latest
+
+Write-Host "going to create destination connection"
+$CrmSourceDestinationString = Connect-CrmOnline -ConnectionString "AuthType=ClientSecret; url=$CRMDestinationUrl; ClientId=$CRMDestinationUserName; ClientSecret=$CRMDestinationPassword"
+
+
+Write-Host "destination connection created"
+Set-CrmConnectionTimeout -conn $CrmSourceDestinationString -TimeoutInSeconds 5000
+
+Write-host "Importing Solution"
+Import-CrmSolution -conn $CrmSourceDestinationString -SolutionFilePath "$SolutionFilePath\\$solutionName"
+Write-host "Solution Imported"
+
+Write-Host "Publishing Customizations in destination environment"
+Publish-CrmAllCustomization -conn $CrmSourceDestinationString
+Write-Host "Publishing Completed in destination environment"
+
+       ''')
+   println stdout
+
+
+  } catch (Exception e) {
+                println('Handle the exception!')
+                println(e.message)
+                error('Build failed because of ' + e.message)
+            }
+        }
+        }
+}
