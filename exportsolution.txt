@@ -1,0 +1,168 @@
+void call() {
+        stage(config.stagename) {
+        node(config.agent) {
+         
+            String response, url
+            String agent = config.agent
+            String appname = config.appname
+            String jobname = config.jobname
+            String branchname = config.branchname
+            String buildnumber = config.buildnumber
+            String githubapiurl = config.githubapiurl
+            String githubtokencredentialid = config.githubtokencredentialid
+            String jenkinsurl = config.jenkinsurl
+            String appsolutionname = config.appsolutionname ?: ''
+            String fprfilename = config.fprfilename ?: ''
+            String sourcename = config.sourcename
+            String crmsolutionname = config.crmsolutionname
+       
+
+            def jobnameparts = jobname.tokenize('/') as String[]
+            def jobconsolename = jobnameparts[0]
+            String jenkinsbuildurl =  jenkinsurl + 'blue/organizations/jenkins/' + jobconsolename + '/detail/' + branchname + '/' + buildnumber + '/pipeline'
+
+            String agentname = agent.toLowerCase()
+
+
+            try {         
+
+  
+
+            def stdout = powershell(returnStdout: true, script: '''        
+# force strict - so any variable used before being assigned causes an error
+Set-PsDebug -Strict
+# force PowerShell to exit with a non-zero code on the first error
+$ErrorActionPreference = 'Stop'
+
+# set $LASTEXITCODE to zero, so the script doesn't fail if no exit code returned
+$LASTEXITCODE = 0
+
+
+
+$solutionName ="$($env:SolutionName)"
+
+$source = "$($env:Source)"
+
+
+$CRMSourceUrl=""
+
+
+
+if($source -eq 'pats-r-dev'){
+    Write-Host "Dev Source"
+    $CRMSourceUrl="https://dvagov-veft-dev2.crm9.dynamics.com"
+} elseif($source -eq 'pats-r-int'){
+    Write-Host "Int Source"
+    $CRMSourceUrl="https://dvagov-veft-dev2.crm9.dynamics.com"
+}
+elseif($source -eq 'qa'){
+    Write-Host "QA Source"
+    $CRMSourceUrl="https://dvagov-veft-dev2.crm9.dynamics.com"
+}
+elseif($source -eq 'pre-production'){
+    Write-Host "Pre-Prod Source"
+    $CRMSourceUrl="https://dvagov-veft-dev2.crm9.dynamics.com"
+}
+elseif($source -eq 'master'){
+    Write-Host "Master Source"
+    $CRMSourceUrl="https://dvagov-veft-dev2.crm9.dynamics.com"
+}
+
+$SolutionFilePath="F:\\jenkins\\workspace\\PATS-R-Export-Solution\\Solutions\\export"
+$CRMSourceUserName="3c66af14-6950-429d-b042-68e61fa90bd2"
+$CRMSourcePassword="Hm6kyDaB.3YR.7ZC7nxXdlEH1_x7W_r-HS"
+
+
+
+
+
+Set-StrictMode -Version latest
+
+#Update Source CRM instance details below:
+Write-Host "going to create source connection"
+#$CrmSourceConnectionString = EstablishCRMConnection -user "$CRMSourceUserName" -secpasswd "$CRMSourcePassword" -crmUrl "$CRMSourceUrl"
+$CrmSourceConnectionString = Connect-CrmOnline -ConnectionString "AuthType=ClientSecret; url=$CRMSourceUrl; ClientId=$CRMSourceUserName; ClientSecret=$CRMSourcePassword"
+Write-Host "source connection created"
+Set-CrmConnectionTimeout -conn $CrmSourceConnectionString -TimeoutInSeconds 5000
+
+
+Write-Host "Publishing Customizations in source environment"
+#Publish-CrmAllCustomization -conn $CrmSourceConnectionString
+Write-Host "Publishing Completed in source environment."
+
+
+ 
+
+$fetch = [xml]@"
+
+<fetch >
+
+  <entity name="solution" >
+
+    <attribute name="version" />
+
+    <filter>
+
+      <condition attribute="uniquename" operator="eq" value="$solutionName" />
+
+    </filter>
+
+  </entity>
+
+</fetch>
+
+"@
+
+$record = Get-CrmRecordsByFetch -conn $CrmSourceConnectionString -Fetch $fetch.OuterXml
+
+$version = $record.CrmRecords.version
+ 
+#$packageName = "$solutionName" +'_' + "$version" + '_' + (Get-Date).tostring("yyyy_MM_dd_hh_mm")
+$packageName = "$solutionName" + '_' + (Get-Date).tostring("yyyy_MM_dd_hh_mm")
+
+Write-Host "Exporting Solution"
+Export-CrmSolution -conn $CrmSourceConnectionString -SolutionName "$solutionName" -SolutionFilePath "$SolutionFilePath" -SolutionZipFileName "$packageName.zip" 
+Write-host "Solution Exported."
+
+
+if (!(Test-Path Solutions/export))
+{
+  New-Item -Path Solutions/export -ItemType Directory
+}
+
+cd Solutions/export
+dir
+if (!(Test-Path $packageName))
+{
+
+   if (!(Test-Path ../latest))
+   {
+        New-Item -Path ../latest -ItemType Directory
+    }
+
+    Copy-Item "$packageName.zip" ../latest
+
+    New-Item -Path "$packageName" -ItemType Directory
+    New-Item -Path "$packageName/unpacked" -ItemType Directory
+    Copy-Item "$packageName.zip" "$packageName"
+    Remove-Item -Path "$packageName.zip"
+    cd "$packageName"
+    Expand-Archive "$packageName.zip" unpacked
+
+}
+
+              
+
+       ''')
+
+   println stdout
+
+
+  } catch (Exception e) {
+                println('Handle the exception!')
+                println(e.message)
+                error('Build failed because of ' + e.message)
+            }
+        }
+        }
+}
